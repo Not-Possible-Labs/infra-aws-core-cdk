@@ -1,0 +1,106 @@
+{
+  "vpc-provider:account=896502667345:filter.isDefault=false:filter.vpc-id=vpc-0256623dfb0f5ee75:region=us-east-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-0256623dfb0f5ee75",
+    "vpcCidrBlock": "10.1.0.0/16",
+    "ownerAccountId": "896502667345",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "private-subnet",
+        "type": "Private",
+        "subnets": [
+          {
+            "subnetId": "subnet-08cefdf66a85f4d5f",
+            "cidr": "10.1.0.0/24",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-095e424f99fbf1c38"
+          },
+          {
+            "subnetId": "subnet-06bddd1d86584bf4f",
+            "cidr": "10.1.1.0/24",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-0b3a1eaf83404c418"
+          }
+        ]
+      },
+      {
+        "name": "public-subnet",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-0d0788b4b61312a5c",
+            "cidr": "10.1.2.0/24",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-0b6c8c315829f21b6"
+          },
+          {
+            "subnetId": "subnet-0eb4973b1bbc5338b",
+            "cidr": "10.1.3.0/24",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-078a8f0ce35e07976"
+          }
+        ]
+      }
+    ]
+  },
+  "availability-zones:account=896502667345:region=us-east-1": [
+    "us-east-1a",
+    "us-east-1b",
+    "us-east-1c",
+    "us-east-1d",
+    "us-east-1e",
+    "us-east-1f"
+  ],
+  "vpc-provider:account=366394957699:filter.isDefault=false:filter.vpc-id=vpc-01386cc23ddfbbb97:region=us-east-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-01386cc23ddfbbb97",
+    "vpcCidrBlock": "10.0.0.0/24",
+    "ownerAccountId": "366394957699",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "public-subnet",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-0924ea1557c856e83",
+            "cidr": "10.0.0.32/28",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-0703eab66e68a421c"
+          },
+          {
+            "subnetId": "subnet-026cdc3050a405826",
+            "cidr": "10.0.0.48/28",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-0f69e89eb1b796fdd"
+          }
+        ]
+      },
+      {
+        "name": "private-subnet",
+        "type": "Private",
+        "subnets": [
+          {
+            "subnetId": "subnet-00fae570d52d05a52",
+            "cidr": "10.0.0.0/28",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-02012b77fdecc85ca"
+          },
+          {
+            "subnetId": "subnet-054ac9334ef69d19f",
+            "cidr": "10.0.0.16/28",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-0dc07b37ab484f4bd"
+          }
+        ]
+      }
+    ]
+  },
+  "hosted-zone:account=366394957699:domainName=ov3r.tech:region=us-east-1": {
+    "Id": "/hostedzone/Z06897591IYJW002HIP76",
+    "Name": "ov3r.tech."
+  },
+  "hosted-zone:account=896502667345:domainName=dev.ov3r.tech:region=us-east-1": {
+    "Id": "/hostedzone/Z009109926CMYH9U3SIWZ",
+    "Name": "dev.ov3r.tech."
+  }
+}

@@ -1,0 +1,41 @@
+import { authApi, platformUi, adminUi, database } from "./services";
+
+interface propertiesConfig {
+  subdomain: string;
+  priority: number;
+  desiredCount: number;
+  memoryLimitMiB: number;
+  cpu: number;
+}
+
+export interface Service {
+  name: string;
+  description: string;
+  type: "platform" | "database" | "api";
+  ecrRepositoryRequired: boolean;
+  github?: string;
+  properties: propertiesConfig;
+  secrets?: string[];
+  environmentVariables?: Record<string, string>;
+  healthCheck?: string;
+}
+
+export interface Project {
+  name: string;
+  domain: string;
+  envs: string[];
+  slackWorkspaceId: string;
+  pipelineSlackChannelId: string;
+  services: Service[];
+}
+
+export const projects: Project[] = [
+  {
+    name: "not-possible",
+    domain: "notpossiblelabs.com",
+    envs: ["dev"],
+    slackWorkspaceId: "T08L3S9A1D3",
+    pipelineSlackChannelId: "C08LXDDRZA9",
+    services: [authApi, platformUi, adminUi, database],
+  },
+] as const;
