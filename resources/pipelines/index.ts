@@ -229,11 +229,15 @@ export class PipelineStack extends cdk.Stack {
     const codePipelineRule = new codestarnotifications.NotificationRule(this, `${prefix}-codepipeline-notifications-rule`, {
       source: pipeline, //build,
       events: [
-        "codepipeline-pipeline-manual-approval-needed",
         "codepipeline-pipeline-pipeline-execution-failed",
-        "codepipeline-pipeline-action-execution-failed",
-        "codepipeline-pipeline-stage-execution-failed",
+        "codepipeline-pipeline-pipeline-execution-canceled",
         "codepipeline-pipeline-pipeline-execution-started",
+        "codepipeline-pipeline-pipeline-execution-resumed",
+        "codepipeline-pipeline-pipeline-execution-succeeded",
+        "codepipeline-pipeline-pipeline-execution-superseded",
+        "codepipeline-pipeline-manual-approval-failed",
+        "codepipeline-pipeline-manual-approval-needed",
+        "codepipeline-pipeline-manual-approval-succeeded",
       ],
       targets: [SNSTopic],
       enabled: true,
@@ -245,7 +249,12 @@ export class PipelineStack extends cdk.Stack {
 
     const codebuildRule = new codestarnotifications.NotificationRule(this, `${prefix}-codebuild-notifications-rule`, {
       source: build,
-      events: ["codebuild-project-build-state-failed"],
+      events: [
+        "codebuild-project-build-state-failed",
+        "codebuild-project-build-state-succeeded",
+        "codebuild-project-build-state-in-progress",
+        "codebuild-project-build-state-stopped",
+      ],
       targets: [SNSTopic],
       enabled: true,
       detailType: codestarnotifications.DetailType.BASIC,
@@ -256,7 +265,12 @@ export class PipelineStack extends cdk.Stack {
 
     const codeDeployRule = new codestarnotifications.NotificationRule(this, `${prefix}-codedeploy-notifications-rule`, {
       source: deploy,
-      events: ["codebuild-project-build-state-failed"],
+      events: [
+        "codebuild-project-build-state-failed",
+        "codebuild-project-build-state-succeeded",
+        "codebuild-project-build-state-in-progress",
+        "codebuild-project-build-state-stopped",
+      ],
       targets: [SNSTopic],
       enabled: true,
       detailType: codestarnotifications.DetailType.BASIC,
