@@ -8,7 +8,7 @@ import { FargateStack as WebSvcFargateService } from "../fargate/platform";
 import { Service } from "../../../properties";
 import { addStandardTags } from "../../../helpers/tag_resources";
 import { PostgresStack } from "../fargate/database";
-
+import { ConduktorStack } from "../fargate/conduktor";
 export interface MainStackProps extends cdk.StackProps {
   readonly environment: string;
   readonly project: string;
@@ -50,12 +50,34 @@ export class MainStack extends cdk.Stack {
       },
     });
 
-
-
     props.services.forEach((service) => {
       /**************************** COMPUTE RESOURCES ********************************/
 
       switch (service.type) {
+        case "conduktor":
+          const conduktor = new ConduktorStack(this, `${props.environment}-${props.project}-${service.name}-cdk`, {
+            stackName: `${props.environment}-${props.project}-${service.name}-cdk`,
+            environment: props.environment,
+            project: props.project,
+            subdomain: service.properties.subdomain,
+            domain: props.domain,
+            healthCheck: service.healthCheck!,
+            targetGroupPriority: service.properties.priority,
+            desiredCount: service.properties.desiredCount,
+            service: service.name,
+            memoryLimitMiB: service.properties.memoryLimitMiB,
+            cpu: service.properties.cpu,
+            vpcId: props.vpcId,
+            whitelist: props.whitelist,
+            env: { account: this.account, region: this.region },
+            description: "Conduktor as a Docker container on ECS with Fargate",
+            tags: {
+              Environment: props.environment,
+              Project: props.project,
+              Service: service.name,
+            },
+          }).addDependency(shared);
+          break;
         case "database":
           const postgres = new PostgresStack(this, `${props.environment}-${props.project}-${service.name}-cdk`, {
             stackName: `${props.environment}-${props.project}-${service.name}-cdk`,
@@ -82,10 +104,9 @@ export class MainStack extends cdk.Stack {
             stackName: `${props.environment}-${props.project}-${service.name}-cdk`,
             environment: props.environment,
             project: props.project,
-            microService: true,
             service: service.name,
             type: service.type,
-            description: "Rest API Service that communicates with RDS Postgres",
+            description: "JavaScript Framework (e.g. Next.js, Nuxt, etc.) application running on Fargate",
             desiredCount: service.properties.desiredCount,
             secretVariables: service.secrets,
             internetFacing: false,
@@ -113,7 +134,6 @@ export class MainStack extends cdk.Stack {
             stackName: `${props.environment}-${props.project}-${service.name}-cdk`,
             environment: props.environment,
             project: props.project,
-            microService: true,
             service: service.name,
             type: service.type,
             description: "Rest API Service that communicates with RDS Postgres",
@@ -139,7 +159,6 @@ export class MainStack extends cdk.Stack {
           });
           defaultService.addDependency(shared);
       }
-
     });
   }
 }

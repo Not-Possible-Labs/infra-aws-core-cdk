@@ -40,9 +40,7 @@ export interface FargateStackStackProps extends cdk.StackProps {
   readonly memoryLimitMiB: number;
   readonly cpu: number;
   readonly targetGroupPriority?: number;
-  readonly microService?: boolean;
   readonly subdomain: string;
-  readonly containerPort?: number;
   readonly whitelist?: Array<{ address: string; description: string }>;
 }
 export class FargateStack extends cdk.Stack {

@@ -198,8 +198,8 @@ export class PipelineStack extends cdk.Stack {
       role: role,
     });
 
-    const deployAction01 = new codepipeline_actions.CodeBuildAction({
-      actionName: "us-east-1",
+    const deployAction = new codepipeline_actions.CodeBuildAction({
+      actionName: "fargate",
       role: role,
       project: deploy,
       input: sourceArtifact,
@@ -216,7 +216,7 @@ export class PipelineStack extends cdk.Stack {
     /********* PIPELINE STAGES **************/
     pipeline.addStage({ stageName: "Source", actions: [sourceAction] });
     pipeline.addStage({ stageName: "Build", actions: [buildAction] });
-    pipeline.addStage({ stageName: "Deploy", actions: [deployAction01] });
+    pipeline.addStage({ stageName: "Deploy", actions: [deployAction] });
 
     /************************************************** CODESTAR ******************************************************* */
 

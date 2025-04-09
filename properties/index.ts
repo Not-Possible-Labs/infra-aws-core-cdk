@@ -1,4 +1,4 @@
-import { authApi, platformUi, adminUi, database } from "./services";
+import * as service from "./services";
 
 interface propertiesConfig {
   subdomain: string;
@@ -11,7 +11,7 @@ interface propertiesConfig {
 export interface Service {
   name: string;
   description: string;
-  type: "platform" | "database" | "api";
+  type: "platform" | "database" | "api" | "conduktor";
   ecrRepositoryRequired: boolean;
   github?: string;
   properties: propertiesConfig;
@@ -36,6 +36,20 @@ export const projects: Project[] = [
     envs: ["dev"],
     slackWorkspaceId: "T08L3S9A1D3",
     pipelineSlackChannelId: "C08LXDDRZA9",
-    services: [authApi, platformUi, adminUi, database],
+    services: [
+      service.platformUi,
+      service.authApi,
+      service.matchmakingApi,
+      service.gameStateApi,
+      service.leaderboardRankingApi,
+      service.cheatDetectionApi,
+      //service.messagingApi,
+      //service.paymentsApi,
+      //service.disputeResolutionApi,
+      //service.bettingApi,
+      service.adminUi,
+      service.database,
+      service.conduktor,
+    ],
   },
 ] as const;

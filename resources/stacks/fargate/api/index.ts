@@ -34,10 +34,8 @@ export interface FargateStackStackProps extends cdk.StackProps {
   readonly memoryLimitMiB: number;
   readonly cpu: number;
   readonly targetGroupPriority?: number;
-  readonly microService?: boolean;
   readonly loadBalancerDns?: string;
   readonly subdomain: string;
-  readonly containerPort?: number;
   readonly whitelist?: Array<{ address: string; description: string }>;
 }
 export class FargateStack extends cdk.Stack {
@@ -79,7 +77,9 @@ export class FargateStack extends cdk.Stack {
     const secrets = new secretsmanager.Secret(this, `${prefix}-secret`, {
       secretName: prefix,
       secretObjectValue: {
-        PUBLICA_API_TOKEN: cdk.SecretValue.unsafePlainText(""),
+        NODE_ENV: cdk.SecretValue.unsafePlainText(""),
+        DATABASE_URL: cdk.SecretValue.unsafePlainText(""),
+        APIKEY: cdk.SecretValue.unsafePlainText(""),
       },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       encryptionKey: kmsKey,

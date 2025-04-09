@@ -37,8 +37,6 @@ export class DevOpsStack extends cdk.Stack {
     // Add tags to the stack itself
     addStandardTags(this, taggingProps);
 
-
-
     /************************************* ECR Resources ****************************/
 
     props.services.forEach((service) => {
@@ -205,16 +203,16 @@ export class SharedServicesStack extends cdk.Stack {
     new cdk.CfnOutput(this, `${prefix}-hosted-zone-id`, {
       value: subZone.hostedZoneId,
       exportName: `${prefix}-hosted-zone-id`,
-      description: "The ID of the public hosted zone"
+      description: "The ID of the public hosted zone",
     });
 
     // import the delegation role by constructing the roleArn
     const delegationRoleArn = cdk.Stack.of(this).formatArn({
-      region: '', // IAM is global in each partition
-      service: 'iam',
+      region: "", // IAM is global in each partition
+      service: "iam",
       account: process.env.CDK_DEFAULT_ACCOUNT!,
-      resource: 'role',
-      resourceName: 'AdministratorInboundAccessRole',
+      resource: "role",
+      resourceName: "AdministratorInboundAccessRole",
     });
     const delegationRole = iam.Role.fromRoleArn(this, `${prefix}-delegation-role`, delegationRoleArn);
 
@@ -231,7 +229,13 @@ export class SharedServicesStack extends cdk.Stack {
       subjectAlternativeNames: [`*.${props.environment}.${props.domain}`],
     });
 
-    certificate.node.addDependency(subZone)
+    new cdk.CfnOutput(this, `${prefix}-certificate-arn`, {
+      value: certificate.certificateArn,
+      description: "The ARN for the certificate",
+      exportName: `${prefix}-certificate-arn`,
+    });
+
+    certificate.node.addDependency(subZone);
 
     /************************************************** SHARED APPLICATION LOAD BALANCER ******************************************************* */
 
@@ -316,17 +320,17 @@ export class SharedServicesStack extends cdk.Stack {
 
     /*************** Internal DNS ***************/
 
-    /*  const internalZone = new route53.PrivateHostedZone(this, `${prefix}-internal-zone`, {
-       zoneName: `${props.project}.internal`,
-       vpc: vpc,
-     });
-     addStandardTags(internalZone, taggingProps);
- 
-     new cdk.CfnOutput(this, `${prefix}-internal-zone-id`, {
-       value: internalZone.hostedZoneId,
-       description: "The ID for the internal zone",
-       exportName: `${prefix}-internal-zone-id`,
-     }); */
+    /*   const internalZone = new route53.PrivateHostedZone(this, `${prefix}-internal-zone`, {
+      zoneName: `${props.project}.internal`,
+      vpc: vpc,
+    });
+    addStandardTags(internalZone, taggingProps);
+
+    new cdk.CfnOutput(this, `${prefix}-internal-zone-id`, {
+      value: internalZone.hostedZoneId,
+      description: "The ID for the internal zone",
+      exportName: `${prefix}-internal-zone-id`,
+    }); */
   }
 }
 
