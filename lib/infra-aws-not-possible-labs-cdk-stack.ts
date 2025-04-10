@@ -34,11 +34,11 @@ export class InfraAwsNotPossibleLabsCdkStack extends cdk.Stack {
 
     const whitelist = [
       { address: "10.0.0.0/24", description: "mgmt us-east-1 vpc" },
-      { address: "10.1.0.0/16", description: "dev us-east-1 vpc" },
-      { address: "10.2.0.0/16", description: "prod us-east-1 vpc" },
-      { address: "10.3.0.0/16", description: "dev us-west-1 vpc" },
-      { address: "10.4.0.0/16", description: "prod us-west-1 vpc" },
-      { address: "10.5.0.0/24", description: "prod us-west-1 vpc" },
+      //{ address: "10.1.0.0/16", description: "dev us-east-1 vpc" },
+      //{ address: "10.2.0.0/16", description: "prod us-east-1 vpc" },
+      //{ address: "10.3.0.0/16", description: "dev us-west-1 vpc" },
+      //{ address: "10.4.0.0/16", description: "prod us-west-1 vpc" },
+      //{ address: "10.5.0.0/24", description: "prod us-west-1 vpc" },
     ];
 
     projects.forEach((project) => {

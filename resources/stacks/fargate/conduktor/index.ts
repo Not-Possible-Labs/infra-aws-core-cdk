@@ -12,7 +12,9 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as backup from "aws-cdk-lib/aws-backup";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
-
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as servicediscovery from "aws-cdk-lib/aws-servicediscovery";
+import * as ecr from "aws-cdk-lib/aws-ecr";
 const mgmt = { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION };
 
 /**
@@ -45,14 +47,20 @@ export class ConduktorStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ConduktorStackProps) {
     super(scope, id, props);
 
-    // =============================================
+    // *********************************************
     // Core Infrastructure Setup
-    // =============================================
+    // *********************************************
     const prefix = `${props.environment}-${props.project}-${props.service}`;
     const vpc = ec2.Vpc.fromLookup(this, `importing-${prefix}-vpc`, {
       isDefault: false,
       vpcId: props.vpcId,
     });
+
+    const ecrRepository = ecr.Repository.fromRepositoryArn(
+      this,
+      `import-${prefix}-ecr-repository`,
+      `arn:aws:ecr:${this.region}:${process.env.CDK_DEFAULT_ACCOUNT}:repository/infra-${props.service}`
+    );
 
     // Stack tagging configuration
     const taggingProps = {
@@ -69,9 +77,9 @@ export class ConduktorStack extends cdk.Stack {
     // Add tags to the stack itself
     addStandardTags(this, taggingProps);
 
-    // =============================================
+    // *********************************************
     // IAM Role Configuration
-    // =============================================
+    // *********************************************
     const role = new iam.Role(this, `${prefix}-role`, {
       assumedBy: new iam.CompositePrincipal(new iam.ServicePrincipal("ecs-tasks.amazonaws.com"), new iam.ServicePrincipal("ecs.amazonaws.com")),
       roleName: `${prefix}-role`,
@@ -96,70 +104,55 @@ export class ConduktorStack extends cdk.Stack {
       })
     );
 
-    // =============================================
+    // *********************************************
     // ECS Cluster Configuration
-    // =============================================
+    // *********************************************
     const ecsCluster = ecs.Cluster.fromClusterAttributes(this, `import-${prefix}-fargate-cluster`, {
       clusterName: `${props.project}`,
       vpc: vpc,
       securityGroups: [],
     });
 
-    // =============================================
+    // *********************************************
     // Security Group Configuration
-    // =============================================
+    // *********************************************
     // Main security group for PostgreSQL service
-    const defaultSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-postgres-sg`, {
+    const fargateSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-postgres-sg`, {
       vpc: vpc,
       description: `Security group for Postgres service in ${props.environment}`,
       allowAllOutbound: true,
       securityGroupName: `${prefix}-postgres`,
     });
-    addStandardTags(defaultSecurityGroup, taggingProps);
+    addStandardTags(fargateSecurityGroup, taggingProps);
 
     // Configure inbound rules
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(80), "Allow HTTP from within VPC");
-    defaultSecurityGroup.addIngressRule(defaultSecurityGroup, ec2.Port.tcp(5432), "Allow PostgreSQL from self");
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(80), "Allow HTTP from within VPC");
+    fargateSecurityGroup.addIngressRule(fargateSecurityGroup, ec2.Port.tcp(5432), "Allow PostgreSQL from self");
 
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(8080), "Allow HTTP from within VPC");
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4("10.0.0.0/24"), ec2.Port.tcp(8080), `Allow conduktor console port for management vpc`);
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(8080), "Allow HTTP from within VPC");
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4("10.0.0.0/24"), ec2.Port.tcp(8080), `Allow conduktor console port for management vpc`);
 
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.allIcmp(), "Allow ICMP from within VPC");
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.allIcmp(), "Allow ICMP from within VPC");
 
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(5432), `Allow TCP Traffic for ${vpc.vpcId}`);
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(80), `Allow TCP Traffic for ${vpc.vpcId}`);
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.allIcmp(), "Allow all ICMP traffic");
-    defaultSecurityGroup.addIngressRule(defaultSecurityGroup, ec2.Port.tcp(5432), `Allow traffic from self on postgres port`);
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4("10.0.0.0/24"), ec2.Port.tcp(5432), `Allow postgres port for management vpc`);
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4("10.0.0.0/24"), ec2.Port.tcp(80), `Allow TCP Traffic for management vpc`);
-    defaultSecurityGroup.addIngressRule(ec2.Peer.ipv4("10.0.0.0/24"), ec2.Port.allIcmp(), `Allow ICMP Ping for management vpc`);
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(5432), `Allow TCP Traffic for ${vpc.vpcId}`);
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(80), `Allow TCP Traffic for ${vpc.vpcId}`);
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.allIcmp(), "Allow all ICMP traffic");
+    fargateSecurityGroup.addIngressRule(fargateSecurityGroup, ec2.Port.tcp(5432), `Allow traffic from self on postgres port`);
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4("10.0.0.0/24"), ec2.Port.tcp(5432), `Allow postgres port for management vpc`);
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4("10.0.0.0/24"), ec2.Port.tcp(80), `Allow TCP Traffic for management vpc`);
+    fargateSecurityGroup.addIngressRule(ec2.Peer.ipv4("10.0.0.0/24"), ec2.Port.allIcmp(), `Allow ICMP Ping for management vpc`);
 
     const conduktorPorts = [8080, 9090, 9010, 9009, 9095];
 
     conduktorPorts.forEach((port) => {
-      defaultSecurityGroup.addIngressRule(defaultSecurityGroup, ec2.Port.tcp(port), `Allow traffic from self on port ${port}`);
+      fargateSecurityGroup.addIngressRule(fargateSecurityGroup, ec2.Port.tcp(port), `Allow traffic from self on port ${port}`);
     });
 
-    // =============================================
-    // Load Balancer Configuration
-    // =============================================
-    const networkLoadBalancer = new elbv2.NetworkLoadBalancer(this, `${prefix}-nlb`, {
-      vpc: vpc,
-      internetFacing: false,
-      vpcSubnets: {
-        subnets: vpc.privateSubnets,
-        availabilityZones: vpc.availabilityZones,
-      },
-      loadBalancerName: `${prefix}`,
-      securityGroups: [defaultSecurityGroup],
-    });
-    addStandardTags(networkLoadBalancer, taggingProps);
 
-    cdk.Tags.of(networkLoadBalancer).add("Name", `${prefix}`);
 
-    // =============================================
+    // *********************************************
     // EFS Storage Configuration
-    // =============================================
+    // *********************************************
     // Security group for EFS access
     const postgresEfsSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-postgres-efs-security-group`, {
       vpc: vpc,
@@ -169,115 +162,16 @@ export class ConduktorStack extends cdk.Stack {
     addStandardTags(postgresEfsSecurityGroup, taggingProps);
 
     // Configure EFS security rules
-    postgresEfsSecurityGroup.addIngressRule(defaultSecurityGroup, ec2.Port.tcp(2049), "Allow NFS from Fargate tasks");
+    postgresEfsSecurityGroup.addIngressRule(fargateSecurityGroup, ec2.Port.tcp(2049), "Allow NFS from Fargate tasks");
     postgresEfsSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(2049), "Allow NFS from VPC");
 
     // Tag EFS security group
     cdk.Tags.of(postgresEfsSecurityGroup).add("environment", prefix);
     cdk.Tags.of(postgresEfsSecurityGroup).add("Name", `${prefix}-postgres-efs`);
 
-    // Create EFS filesystem
-    const fileSystem = new efs.FileSystem(this, `${prefix}-postgres-efs`, {
-      vpc: vpc,
-      vpcSubnets: {
-        subnets: vpc.privateSubnets,
-        availabilityZones: vpc.availabilityZones,
-      },
-      encrypted: true,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      fileSystemName: `${prefix}`,
-      securityGroup: postgresEfsSecurityGroup,
-      enableAutomaticBackups: true,
-      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
-      throughputMode: efs.ThroughputMode.BURSTING,
-    });
-    addStandardTags(fileSystem, taggingProps);
-
-    // Tag EFS filesystem
-    cdk.Tags.of(fileSystem).add("environment", prefix);
-
-    // =============================================
-    // Backup Configuration
-    // =============================================
-    /*  const backupVault = new backup.BackupVault(this, `${prefix}-backup-vault`, {
-             backupVaultName: `${prefix}-vault`,
-             removalPolicy: cdk.RemovalPolicy.DESTROY,
-         });
- 
-         const backupPlan = new backup.BackupPlan(this, `${prefix}-backup-plan`, {
-             backupPlanName: `${prefix}-plan`,
-             backupVault: backupVault,
-         });
- 
-         // Configure daily backups
-         backupPlan.addRule(
-             new backup.BackupPlanRule({
-                 ruleName: "DailyBackup",
-                 scheduleExpression: cdk.aws_events.Schedule.cron({ hour: "2", minute: "0" }),
-                 deleteAfter: cdk.Duration.days(2),
-             })
-         );
- 
-         backupPlan.addSelection(`${prefix}-efs-selection`, {
-             resources: [
-                 backup.BackupResource.fromArn(fileSystem.fileSystemArn),
-             ],
-         }); */
-
-    // =============================================
-    // EFS Access Point Configuration
-    // =============================================
-    const postgresAccessPoint = new efs.AccessPoint(this, `${prefix}-postgres-access-point`, {
-      fileSystem: fileSystem,
-      path: "/postgresql",
-      createAcl: {
-        ownerGid: "999",
-        ownerUid: "999",
-        permissions: "755",
-      },
-      posixUser: {
-        gid: "999",
-        uid: "999",
-      },
-    });
-    addStandardTags(postgresAccessPoint, taggingProps);
-
-    // =============================================
-    // Task Definition Configuration
-    // =============================================
-    // Configure EFS volume for task
-    const efsVolume: ecs.Volume = {
-      name: "efs-volume",
-      efsVolumeConfiguration: {
-        fileSystemId: fileSystem.fileSystemId,
-        transitEncryption: "ENABLED",
-        authorizationConfig: {
-          accessPointId: postgresAccessPoint.accessPointId,
-          iam: "ENABLED",
-        },
-        rootDirectory: "/",
-      },
-    };
-
-    // Create CloudWatch log group
-    const postgresLogGroup = new logs.LogGroup(this, `${prefix}-postgres-logs`, {
-      logGroupName: `/ecs/${prefix}-postgres`,
-      retention: logs.RetentionDays.TWO_MONTHS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-    addStandardTags(postgresLogGroup, taggingProps);
-
-    // Create task definition
-    const postgresTaskDefinition = new ecs.FargateTaskDefinition(this, `${prefix}-postgres-task-definition`, {
-      family: `${props.environment}-postgres`,
-      executionRole: role,
-      taskRole: role,
-      memoryLimitMiB: props.memoryLimitMiB,
-      cpu: props.cpu,
-      volumes: [efsVolume],
-    });
-    addStandardTags(postgresTaskDefinition, taggingProps);
-
+    // *********************************************
+    // Secrets Configuration
+    // *********************************************
     const secrets = new secretsmanager.Secret(this, `${prefix}-secret`, {
       secretName: `${prefix}`,
       secretObjectValue: {
@@ -298,190 +192,65 @@ export class ConduktorStack extends cdk.Stack {
     });
     addStandardTags(secrets, taggingProps);
 
-    // Create container definition
-    const postgresContainer = postgresTaskDefinition.addContainer(`${prefix}-postgres-container`, {
-      image: ecs.ContainerImage.fromRegistry("public.ecr.aws/docker/library/postgres:17.4"),
-      memoryLimitMiB: 1024,
-      cpu: 512,
-      essential: true,
-      stopTimeout: cdk.Duration.seconds(120),
-      environment: {
-        PGDATA: "/var/lib/postgresql/data/pgdata",
-        POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256",
-        POSTGRES_HOST_AUTH_METHOD: "scram-sha-256",
-      },
-      secrets: {
-        POSTGRES_PASSWORD: ecs.Secret.fromSecretsManager(secrets, "POSTGRES_PASSWORD"),
-        POSTGRES_USER: ecs.Secret.fromSecretsManager(secrets, "POSTGRES_USER"),
-        POSTGRES_DB: ecs.Secret.fromSecretsManager(secrets, "POSTGRES_DB"),
-      },
-      linuxParameters: new ecs.LinuxParameters(this, `${prefix}-postgres-linux-parameters`, {
-        initProcessEnabled: true,
-      }),
-      logging: new ecs.AwsLogDriver({
-        streamPrefix: "ecs",
-        logGroup: postgresLogGroup,
-        multilinePattern: "^(INFO|DEBUG|WARN|ERROR|CRITICAL)",
-      }),
-      healthCheck: {
-        command: ["CMD-SHELL", "pg_isready -U postgres || exit 1"],
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        retries: 3,
-        startPeriod: cdk.Duration.seconds(60),
-      },
-      portMappings: [
-        {
-          name: "postgresql",
-          hostPort: 5432,
-          containerPort: 5432,
-          protocol: ecs.Protocol.TCP,
-          //appProtocol: ecs.AppProtocol.,
-        },
-      ],
-    });
 
-    // Configure container mount points and parameters
-    postgresContainer.addMountPoints({
-      containerPath: "/var/lib/postgresql/data",
-      readOnly: false,
-      sourceVolume: efsVolume.name,
-    });
 
-    // Add ulimits for optimal PostgreSQL performance
-    postgresContainer.addUlimits({
-      name: ecs.UlimitName.NOFILE,
-      softLimit: 65536,
-      hardLimit: 65536,
-    });
 
-    postgresContainer.addUlimits({
-      name: ecs.UlimitName.NPROC,
-      softLimit: 65536,
-      hardLimit: 65536,
-    });
 
-    // =============================================
-    // Fargate Service Configuration
-    // =============================================
-    const postgresService = new ecs.FargateService(this, `${prefix}-postgres-service`, {
-      cluster: ecsCluster,
-      taskDefinition: postgresTaskDefinition,
-      assignPublicIp: false,
-      desiredCount: props.desiredCount,
-      securityGroups: [defaultSecurityGroup],
+    // *********************************************
+    // Conduktor Configuration
+    // *********************************************
+
+    // Create EFS filesystem
+    const fileSystem = new efs.FileSystem(this, `${prefix}-postgres-database-filesystem`, {
+      vpc: vpc,
       vpcSubnets: {
         subnets: vpc.privateSubnets,
         availabilityZones: vpc.availabilityZones,
       },
-      enableExecuteCommand: true,
-      serviceName: `${props.service}-postgres`,
+      encrypted: true,
+      fileSystemName: `${prefix}-postgres-database`,
+      securityGroup: postgresEfsSecurityGroup,
+      enableAutomaticBackups: false,
+      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+      throughputMode: efs.ThroughputMode.BURSTING,
     });
-    addStandardTags(postgresService, taggingProps);
+    fileSystem.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+    addStandardTags(fileSystem, taggingProps);
 
-    // Ensure service depends on EFS
-    postgresService.node.addDependency(fileSystem);
 
-    const postgresTargetGroup = new elbv2.NetworkTargetGroup(this, `${prefix}-postgres-target-group-construct`, {
-      targetGroupName: `${prefix}-pg-tg`,
-      targets: [postgresService],
-      protocol: elbv2.Protocol.TCP,
-      port: 5432,
-      vpc: vpc,
-      healthCheck: {
-        protocol: elbv2.Protocol.TCP,
-        port: "5432",
-        interval: cdk.Duration.seconds(6),
-        timeout: cdk.Duration.seconds(5),
-        unhealthyThresholdCount: 2,
-        healthyThresholdCount: 2,
+    const accessPoint = new efs.AccessPoint(this, `${prefix}-access-point`, {
+      fileSystem: fileSystem,
+      path: "/postgresql",
+      createAcl: {
+        ownerGid: "999", // postgres user GID
+        ownerUid: "999", // postgres user UID
+        permissions: "755", // More restrictive permissions for the data directory
+      },
+      posixUser: {
+        gid: "999",
+        uid: "999",
+        secondaryGids: ["999"]  // Ensure PostgreSQL has full access
       },
     });
-    addStandardTags(postgresTargetGroup, taggingProps);
+    addStandardTags(accessPoint, taggingProps);
 
-    const postgresListener = networkLoadBalancer.addListener(`${prefix}-postgres-listener-construct`, {
-      port: 5432,
-      defaultTargetGroups: [postgresTargetGroup],
-    });
-    addStandardTags(postgresListener, taggingProps);
+    // *********************************************
+    // Task Definition Configuration
+    // *********************************************
+    // Configure EFS volume for task
+    const efsVolume: ecs.Volume = {
+      name: "efs-volume",
+      efsVolumeConfiguration: {
+        fileSystemId: fileSystem.fileSystemId,
+        transitEncryption: "ENABLED",
+        authorizationConfig: {
+          accessPointId: accessPoint.accessPointId,
+          iam: "ENABLED",
+        },
+        rootDirectory: "/",
+      },
+    };
 
-    // Ensure service depends on EFS
-    /*  postgresService.node.addDependency(fileSystem); */
-
-    /**
-     * EventBridge Rules for ecs-service Service
-     * Start Fargate Service at 05:00 EST (10:00 UTC)
-     * Stop ecs-service at 23:00 EST (04:00 UTC next day)
-     */
-    // Start Fargate Service service at 05:00 EST (10:00 UTC)
-    /*  const startPostgresRule = new events.Rule(this, `${prefix}-start-postgres-service-rule`, {
-      schedule: events.Schedule.cron({
-        minute: "0",
-        hour: "14",
-        month: "*",
-        day: "*",
-      }),
-      enabled: false,
-      ruleName: `${prefix}-start-postgres-service`,
-      description: `Start Fargate Service service at 05:00 EST (10:00 UTC)`,
-      targets: [
-        new targets.AwsApi({
-          service: "ECS",
-          action: "updateService",
-          parameters: {
-            cluster: ecsCluster.clusterName,
-            service: postgresService.serviceName,
-            desiredCount: 1,
-          },
-          catchErrorPattern: "ServiceNotFoundException",
-          policyStatement: new iam.PolicyStatement({
-            actions: ["ecs:UpdateService"],
-            resources: [postgresService.serviceArn],
-          }),
-        }),
-      ],
-    });
-    addStandardTags(startPostgresRule, taggingProps); */
-
-    // Stop ecs-service service at 23:00 EST (04:00 UTC next day)
-    /*   const stopPostgresRule = new events.Rule(this, `${prefix}-stop-postgres-service-rule`, {
-      schedule: events.Schedule.cron({
-        minute: "0",
-        hour: "2", // 04:00 UTC = 23:00 EST (previous day)
-        month: "*",
-        day: "*",
-      }),
-      ruleName: `${props.service}-stop-postgres-service`,
-      description: `Stop ecs-service service at 23:00 EST (04:00 UTC next day)`,
-      targets: [
-        new targets.AwsApi({
-          service: "ECS",
-          action: "updateService",
-          parameters: {
-            cluster: ecsCluster.clusterName,
-            service: postgresService.serviceName,
-            desiredCount: 0,
-          },
-          catchErrorPattern: "ServiceNotFoundException",
-          policyStatement: new iam.PolicyStatement({
-            actions: ["ecs:UpdateService"],
-            resources: [postgresService.serviceArn],
-          }),
-        }),
-      ],
-    });
-    addStandardTags(stopPostgresRule, taggingProps); */
-
-    // =============================================
-    // Conduktor Configuration
-    // =============================================
-
-    const conduktorLogGroup = new logs.LogGroup(this, `${prefix}-console-logs`, {
-      logGroupName: `/ecs/${prefix}-console`,
-      retention: logs.RetentionDays.TWO_MONTHS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-    addStandardTags(conduktorLogGroup, taggingProps);
 
     const conduktorTaskDefinition = new ecs.FargateTaskDefinition(this, `${prefix}-console-task-definition`, {
       family: `${prefix}-console`,
@@ -493,10 +262,84 @@ export class ConduktorStack extends cdk.Stack {
     });
     addStandardTags(conduktorTaskDefinition, taggingProps);
 
-    const dockerCredentials = secretsmanager.Secret.fromSecretNameV2(this, `${prefix}-dockerhub-credentials`, "dockerhub-credentials");
+    // Create container definition
+    const databaseContainer = conduktorTaskDefinition.addContainer(`${prefix}-postgres-db-container`, {
+      image: ecs.ContainerImage.fromRegistry("public.ecr.aws/docker/library/postgres:17.4"),
+      memoryLimitMiB: 1024,
+      cpu: 512,
+      essential: true,
+      stopTimeout: cdk.Duration.seconds(120),
+      environment: {
+        PGDATA: "/var/lib/postgresql/data",
+        POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256",
+        POSTGRES_HOST_AUTH_METHOD: "scram-sha-256",
+        POSTGRES_STOP_MODE: "smart",
+        POSTGRES_SHUTDOWN_TIMEOUT: "300",
+      },
+      dockerLabels: {
+        "STOPSIGNAL": "SIGTERM"
+      },
+      secrets: {
+        POSTGRES_PASSWORD: ecs.Secret.fromSecretsManager(secrets, "POSTGRES_PASSWORD"),
+        POSTGRES_USER: ecs.Secret.fromSecretsManager(secrets, "POSTGRES_USER"),
+        POSTGRES_DB: ecs.Secret.fromSecretsManager(secrets, "POSTGRES_DB"),
+      },
+      linuxParameters: new ecs.LinuxParameters(this, `${prefix}-postgres-linux-parameters`, {
+        initProcessEnabled: true,
+      }),
+      logging: new ecs.AwsLogDriver({
+        streamPrefix: "ecs",
+        logGroup: new logs.LogGroup(this, `${prefix}-postgres-logs`, {
+          logGroupName: `/ecs/${prefix}-postgres`,
+          retention: logs.RetentionDays.TWO_MONTHS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+        multilinePattern: "^(INFO|DEBUG|WARN|ERROR|CRITICAL)",
+      }),
+      healthCheck: {
+        command: ["CMD-SHELL", "pg_isready -U postgres || exit 1"],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        retries: 5,
+        startPeriod: cdk.Duration.seconds(120),
+      },
+      portMappings: [
+        {
+          name: "postgresql",
+          hostPort: 5432,
+          containerPort: 5432,
+          protocol: ecs.Protocol.TCP,
+
+        },
+      ],
+    });
+
+    // Configure container mount points and parameters
+    databaseContainer.addMountPoints({
+      containerPath: "/var/lib/postgresql/data",
+      readOnly: false,
+      sourceVolume: efsVolume.name,
+    });
+
+    // Add ulimits for optimal PostgreSQL performance
+    databaseContainer.addUlimits({
+      name: ecs.UlimitName.NOFILE,
+      softLimit: 65536,
+      hardLimit: 65536,
+    });
+
+    databaseContainer.addUlimits({
+      name: ecs.UlimitName.NPROC,
+      softLimit: 65536,
+      hardLimit: 65536,
+    });
+
+
+
+
 
     const conduktorConsoleContainer = conduktorTaskDefinition.addContainer(`${prefix}-console-container`, {
-      image: ecs.ContainerImage.fromRegistry("conduktor/conduktor-console:1.30.0", { credentials: dockerCredentials }),
+      image: ecs.ContainerImage.fromEcrRepository(ecrRepository, `conduktor-console`),
       memoryLimitMiB: 3072, // 3GB of the 4GB total
       cpu: 1536, // 1.5 vCPU (1536 of 2048)
       essential: true,
@@ -508,15 +351,15 @@ export class ConduktorStack extends cdk.Stack {
         CDK_DATABASE_PASSWORD: ecs.Secret.fromSecretsManager(secrets, "CDK_DATABASE_PASSWORD"),
         CDK_DATABASE_USERNAME: ecs.Secret.fromSecretsManager(secrets, "CDK_DATABASE_USERNAME"),
       },
-      /*  healthCheck: {
-        command: [`CMD-SHELL", "curl -f http://localhost:8080${props.healthCheck} || exit 1`],
-        interval: cdk.Duration.seconds(15),
+      healthCheck: {
+        command: ["CMD-SHELL", "curl -s  http://localhost:8080/api/health/live || exit 1"],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
         retries: 5,
-        startPeriod: cdk.Duration.seconds(15),
-        timeout: cdk.Duration.seconds(10),
-      }, */
+        startPeriod: cdk.Duration.seconds(120),
+      },
       environment: {
-        CDK_DATABASE_HOST: networkLoadBalancer.loadBalancerDnsName,
+        CDK_DATABASE_HOST: 'localhost',
         CDK_DATABASE_PORT: "5432",
         "CDK_MONITORING_ALERT-MANAGER-URL": "http://localhost:9010/",
         "CDK_MONITORING_CALLBACK-URL": "http://localhost:8080/monitoring/api/",
@@ -525,7 +368,11 @@ export class ConduktorStack extends cdk.Stack {
       },
       logging: new ecs.AwsLogDriver({
         streamPrefix: "ecs",
-        logGroup: conduktorLogGroup,
+        logGroup: new logs.LogGroup(this, `${prefix}-console-logs`, {
+          logGroupName: `/ecs/${prefix}-console`,
+          retention: logs.RetentionDays.TWO_MONTHS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
         multilinePattern: "^(INFO|DEBUG|WARN|ERROR|CRITICAL)",
       }),
       portMappings: [
@@ -538,29 +385,35 @@ export class ConduktorStack extends cdk.Stack {
       ],
     });
 
-    // =============================================
-    // conduktorMonitoring Configuration
-    // =============================================
+    conduktorConsoleContainer.addContainerDependencies({ container: databaseContainer, condition: ecs.ContainerDependencyCondition.HEALTHY })
 
-    const conduktorMonitoringLogGroup = new logs.LogGroup(this, `${prefix}-logs`, {
-      logGroupName: `/ecs/${prefix}-monitoring`,
-      retention: logs.RetentionDays.TWO_MONTHS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-    addStandardTags(conduktorMonitoringLogGroup, taggingProps);
+    // *********************************************
+    // conduktorMonitoring Configuration
+    // *********************************************
 
     const conduktorMonitoringContainer = conduktorTaskDefinition.addContainer(`${prefix}-monitoring-container`, {
-      image: ecs.ContainerImage.fromRegistry("conduktor/conduktor-console-cortex:1.30.0", { credentials: dockerCredentials }),
+      image: ecs.ContainerImage.fromEcrRepository(ecrRepository, `conduktor-console-cortex`),
       memoryLimitMiB: 1024, // 1GB of the 4GB total
       cpu: 512, // 0.5 vCPU (512 of 2048)
       essential: true,
       stopTimeout: cdk.Duration.seconds(120),
+      healthCheck: {
+        command: ["CMD-SHELL", "curl -s http://localhost:9009/ready || exit 1"],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        retries: 5,
+        startPeriod: cdk.Duration.seconds(120),
+      },
       environment: {
         "CDK_CONSOLE-URL": `http://localhost:8080`,
       },
       logging: new ecs.AwsLogDriver({
         streamPrefix: "ecs",
-        logGroup: conduktorMonitoringLogGroup,
+        logGroup: new logs.LogGroup(this, `${prefix}-monitoring-logs`, {
+          logGroupName: `/ecs/${prefix}-monitoring`,
+          retention: logs.RetentionDays.TWO_MONTHS,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
         multilinePattern: "^(INFO|DEBUG|WARN|ERROR|CRITICAL)",
       }),
       portMappings: [
@@ -585,27 +438,45 @@ export class ConduktorStack extends cdk.Stack {
       ],
     });
 
-    // =============================================
+    // *********************************************
     // Fargate Service Configuration
-    // =============================================
+    // *********************************************
     const conduktorService = new ecs.FargateService(this, `${prefix}-service`, {
       cluster: ecsCluster,
       taskDefinition: conduktorTaskDefinition,
       assignPublicIp: false,
-      desiredCount: props.desiredCount,
-      securityGroups: [defaultSecurityGroup],
+      desiredCount: 1,
+      securityGroups: [fargateSecurityGroup],
+      healthCheckGracePeriod: cdk.Duration.seconds(300),
       vpcSubnets: {
         subnets: vpc.privateSubnets,
         availabilityZones: vpc.availabilityZones,
       },
-      //enableExecuteCommand: true,
       serviceName: `${props.service}`,
     });
+    // Ensure service depends on EFS
+    conduktorService.node.addDependency(fileSystem);
     addStandardTags(conduktorService, taggingProps);
 
-    // =============================================
+    // *********************************************
     // DNS Configuration
-    // =============================================
+    // *********************************************
+    const recordName = props.environment === "prod" ? `${props.subdomain}.${props.domain}` : `${props.subdomain}.${props.environment}.${props.domain}`;
+
+    // Create separate security group for ALB
+    const albSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-alb-sg`, {
+      vpc: vpc,
+      description: `Security group for Application Load Balancer in ${props.environment}`,
+      allowAllOutbound: true,
+      securityGroupName: `${prefix}-alb`,
+    });
+    addStandardTags(albSecurityGroup, taggingProps);
+
+    // Allow ALB to communicate with ECS service
+    fargateSecurityGroup.addIngressRule(albSecurityGroup, ec2.Port.allTcp(), "Allow traffic from ALB");
+    albSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.allTcp(), `Allow TCP Traffic for ${vpc.vpcId}`);
+    albSecurityGroup.addIngressRule(ec2.Peer.ipv4('10.0.0.0/24'), ec2.Port.allTcp(), `Allow TCP Traffic for management vpc`);
+
 
     /**
      * CREATE ALB
@@ -614,60 +485,66 @@ export class ConduktorStack extends cdk.Stack {
       vpc: vpc,
       internetFacing: false,
       loadBalancerName: `${prefix}`,
-      deletionProtection: false,
-      vpcSubnets: { subnets: vpc.privateSubnets, availabilityZones: this.availabilityZones },
+      securityGroup: albSecurityGroup,
+      vpcSubnets: { subnets: vpc.privateSubnets },
       ipAddressType: elbv2.IpAddressType.IPV4,
-      securityGroup: defaultSecurityGroup,
       idleTimeout: cdk.Duration.seconds(30),
     });
     addStandardTags(loadBalancer, taggingProps);
 
-    loadBalancer.addRedirect({
-      sourceProtocol: elbv2.ApplicationProtocol.HTTP,
-      sourcePort: 80,
-      targetProtocol: elbv2.ApplicationProtocol.HTTP,
-      targetPort: 8080,
+    // HTTP Listener (port 80) with redirect to HTTPS
+    const httpListener = loadBalancer.addListener(`${prefix}-http-listener`, {
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      defaultAction: elbv2.ListenerAction.redirect({
+        protocol: "HTTPS",
+        port: "443",
+        permanent: true,
+      }),
     });
 
+    // Target group for Conduktor service
     const targetGroup = new elbv2.ApplicationTargetGroup(this, `${prefix}-target-group`, {
       port: 8080,
-      vpc: vpc,
       protocol: elbv2.ApplicationProtocol.HTTP,
+      vpc: vpc,
       healthCheck: {
-        port: "8080",
-        interval: cdk.Duration.seconds(15),
         path: props.healthCheck,
-        healthyHttpCodes: "200",
+        port: "8080",
+        protocol: elbv2.Protocol.HTTP,
+        interval: cdk.Duration.seconds(15),
         timeout: cdk.Duration.seconds(10),
+        healthyHttpCodes: "200",
         unhealthyThresholdCount: 5,
         healthyThresholdCount: 2,
       },
-      targetGroupName: `${prefix}`,
-      targets: [conduktorService],
-      deregistrationDelay: cdk.Duration.seconds(10),
-    });
 
+      targets: [conduktorService.loadBalancerTarget({ containerPort: 8080, containerName: conduktorConsoleContainer.containerName })],
+      targetGroupName: `${prefix}`,
+    });
     addStandardTags(targetGroup, taggingProps);
 
-    const HTTPListener = loadBalancer.addListener(`${prefix}-http-listener`, {
-      port: 8080,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      open: true,
+    const importedCertificate = acm.Certificate.fromCertificateArn(
+      this,
+      `${props.environment}-${props.project}-imported-primary-certificate`,
+      cdk.Fn.importValue(`${props.environment}-${props.project}-certificate-arn`),
+    );
+    // HTTPS Listener (port 443) forwarding to Conduktor on port 8080
+    const httpsListener = loadBalancer.addListener(`${prefix}-https-listener`, {
+      port: 443,
+      protocol: elbv2.ApplicationProtocol.HTTPS,
+      certificates: [importedCertificate],
       defaultAction: elbv2.ListenerAction.forward([targetGroup]),
     });
 
-    addStandardTags(HTTPListener, taggingProps);
-
-    const recordName = props.environment === "prod" ? `${props.subdomain}.${props.domain}` : `${props.subdomain}.${props.environment}.${props.domain}`;
-
     //Setup Listener Action
-    HTTPListener.addAction(`${prefix}-http-listener-action`, {
+    httpListener.addAction(`${prefix}-http-listener-action`, {
       priority: props.targetGroupPriority,
       conditions: [elbv2.ListenerCondition.hostHeaders([recordName])],
       action: elbv2.ListenerAction.forward([targetGroup]),
     });
 
-    HTTPListener.connections.allowFrom(loadBalancer, ec2.Port.tcp(8080), `Allow connections from ${prefix} load balancer on port 8080`);
+    httpListener.connections.allowFrom(loadBalancer, ec2.Port.tcp(8080), `Allow connections from ${prefix} load balancer on port 8080`);
 
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, `${prefix}-imported-hosted-zone`, {
       hostedZoneId: cdk.Fn.importValue(`${props.environment}-${props.project}-hosted-zone-id`),
@@ -682,11 +559,9 @@ export class ConduktorStack extends cdk.Stack {
     });
     addStandardTags(cnameRecord, taggingProps);
 
-    /**
-     * EventBridge Rules for ecs-service Service
-     * Start Fargate Service at 05:00 EST (10:00 UTC)
-     * Stop ecs-service at 23:00 EST (04:00 UTC next day)
-     */
+    // *********************************************
+    // EventBridge Rules for ecs-service Service
+    // *********************************************
     // Start Fargate Service service at 05:00 EST (10:00 UTC)
     const startRule = new events.Rule(this, `${prefix}-start-ecs-service-rule`, {
       schedule: events.Schedule.cron({
@@ -713,20 +588,7 @@ export class ConduktorStack extends cdk.Stack {
             resources: [conduktorService.serviceArn],
           }),
         }),
-        new targets.AwsApi({
-          service: "ECS",
-          action: "updateService",
-          parameters: {
-            cluster: ecsCluster.clusterName,
-            service: `${postgresService.serviceName}`,
-            desiredCount: 1,
-          },
-          catchErrorPattern: "ServiceNotFoundException",
-          policyStatement: new iam.PolicyStatement({
-            actions: ["ecs:UpdateService"],
-            resources: [postgresService.serviceArn],
-          }),
-        }),
+
       ],
     });
     addStandardTags(startRule, taggingProps);
@@ -756,20 +618,7 @@ export class ConduktorStack extends cdk.Stack {
             resources: [conduktorService.serviceArn],
           }),
         }),
-        new targets.AwsApi({
-          service: "ECS",
-          action: "updateService",
-          parameters: {
-            cluster: ecsCluster.clusterName,
-            service: `${postgresService.serviceName}`,
-            desiredCount: 0,
-          },
-          catchErrorPattern: "ServiceNotFoundException",
-          policyStatement: new iam.PolicyStatement({
-            actions: ["ecs:UpdateService"],
-            resources: [postgresService.serviceArn],
-          }),
-        }),
+
       ],
     });
     addStandardTags(stopRule, taggingProps);

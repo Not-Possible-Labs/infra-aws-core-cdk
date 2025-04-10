@@ -239,125 +239,163 @@ export class SharedServicesStack extends cdk.Stack {
 
     /************************************************** SHARED APPLICATION LOAD BALANCER ******************************************************* */
 
-    const loadBalancerSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-alb-security-group`, {
+    const externalALBSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-alb-security-group`, {
       vpc: vpc,
       securityGroupName: `${prefix}-load-balancer`,
       allowAllOutbound: true,
     });
-    addStandardTags(loadBalancerSecurityGroup, taggingProps);
+    addStandardTags(externalALBSecurityGroup, taggingProps);
 
-    loadBalancerSecurityGroup.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+    externalALBSecurityGroup.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
 
     new cdk.CfnOutput(this, `${props.environment}-load-balancer-sg-id`, {
-      value: loadBalancerSecurityGroup.securityGroupId,
+      value: externalALBSecurityGroup.securityGroupId,
       description: "The id for the load balancer security group",
       exportName: `${prefix}-load-balancer-sg-id`,
     });
 
-    if (props.environment === "prod") {
-      loadBalancerSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.allTraffic(), "Allow all traffic");
+    externalALBSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.allTraffic(), "Allow all traffic");
+
+    /* if (props.environment === "prod") {
+      externalALBSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.allTraffic(), "Allow all traffic");
+    } else {
+      externalALBSecurityGroup.addIngressRule(ec2.Peer.ipv4(`${vpc.vpcCidrBlock}`), ec2.Port.allTcp(), `Allow HTTP from ${vpc.vpcId}`);
+      externalALBSecurityGroup.addIngressRule(ec2.Peer.ipv4(`${vpc.vpcCidrBlock}`), ec2.Port.allIcmp(), `Allow ICMP from ${vpc.vpcId}`);
     }
 
     props.whitelist?.forEach((ip) => {
-      loadBalancerSecurityGroup.addIngressRule(ec2.Peer.ipv4(`${ip.address}`), ec2.Port.allIcmp(), `Allow all traffic for ${ip.description}`);
-      loadBalancerSecurityGroup.addIngressRule(ec2.Peer.ipv4(`${ip.address}`), ec2.Port.allTraffic(), `Allow all traffic for ${ip.description}`);
-    });
+      externalALBSecurityGroup.addIngressRule(ec2.Peer.ipv4(`${ip.address}`), ec2.Port.allTcp(), `Allow HTTP ${ip.description}`);
+      externalALBSecurityGroup.addIngressRule(ec2.Peer.ipv4(`${ip.address}`), ec2.Port.allIcmp(), `Allow ICMP from ${ip.description}`);
+    }); */
 
     /**
      * CREATE ALB
      */
-    const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${prefix}-application-load-balancer`, {
+    const externalALB = new elbv2.ApplicationLoadBalancer(this, `${prefix}-application-load-balancer`, {
       vpc: vpc,
       internetFacing: true,
       loadBalancerName: `${prefix}`,
       deletionProtection: false,
       vpcSubnets: { subnets: vpc.publicSubnets, availabilityZones: this.availabilityZones },
       ipAddressType: elbv2.IpAddressType.IPV4,
-      securityGroup: loadBalancerSecurityGroup,
+      securityGroup: externalALBSecurityGroup,
       idleTimeout: cdk.Duration.seconds(30),
     });
-    addStandardTags(loadBalancer, taggingProps);
+    addStandardTags(externalALB, taggingProps);
 
     new cdk.CfnOutput(this, `${prefix}-load-balancer-dns`, {
-      value: loadBalancer.loadBalancerDnsName,
+      value: externalALB.loadBalancerDnsName,
       description: "The DNS for the load balancer",
       exportName: `${prefix}-load-balancer-dns`,
     });
 
-    loadBalancer.addRedirect({
+    externalALB.addRedirect({
       sourceProtocol: elbv2.ApplicationProtocol.HTTP,
       sourcePort: 80,
       targetProtocol: elbv2.ApplicationProtocol.HTTPS,
       targetPort: 443,
     });
 
-    const HTTPSListener = loadBalancer.addListener(`${prefix}-https-listener`, {
+    const externalALBHTTPSListener = externalALB.addListener(`${prefix}-https-listener`, {
       port: 443,
       protocol: elbv2.ApplicationProtocol.HTTPS,
       certificates: [certificate],
       open: true,
     });
-    addStandardTags(HTTPSListener, taggingProps);
+    addStandardTags(externalALBHTTPSListener, taggingProps);
 
     new cdk.CfnOutput(this, `${prefix}-https-listener-arn`, {
-      value: HTTPSListener.listenerArn,
+      value: externalALBHTTPSListener.listenerArn,
       description: "The ARN for the HTTPS Listener",
       exportName: `${prefix}-https-listener-arn`,
     });
 
-    HTTPSListener.connections.allowFrom(loadBalancer, ec2.Port.tcp(80), `Allow connections from ${prefix} load balancer on port 80`);
-    HTTPSListener.connections.allowFrom(loadBalancer, ec2.Port.tcp(443), `Allow connections from ${prefix} load balancer on port 443`);
+    externalALBHTTPSListener.connections.allowFrom(externalALB, ec2.Port.tcp(80), `Allow connections from ${prefix} load balancer on port 80`);
+    externalALBHTTPSListener.connections.allowFrom(externalALB, ec2.Port.tcp(443), `Allow connections from ${prefix} load balancer on port 443`);
 
-    HTTPSListener.addAction(`${prefix}-default-action`, {
+    externalALBHTTPSListener.addAction(`${prefix}-default-action`, {
       action: elbv2.ListenerAction.fixedResponse(200, { messageBody: JSON.stringify({ response: 200, message: prefix }) }),
     });
 
-    HTTPSListener.addAction("Fixed", {
+    externalALBHTTPSListener.addAction("Fixed", {
       priority: 30,
-      conditions: [elbv2.ListenerCondition.pathPatterns(["/healthCheck"])],
+      conditions: [elbv2.ListenerCondition.pathPatterns(["/healthcheck"])],
       action: elbv2.ListenerAction.fixedResponse(200, { messageBody: JSON.stringify({ response: 200, message: "healthy" }) }),
     });
 
-    /*************** Internal DNS ***************/
 
-    /*   const internalZone = new route53.PrivateHostedZone(this, `${prefix}-internal-zone`, {
-      zoneName: `${props.project}.internal`,
+
+    /************************************************** SHARED APPLICATION LOAD BALANCER ******************************************************* */
+
+    const internalALBSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-internal-alb-security-group`, {
       vpc: vpc,
+      securityGroupName: `${prefix}-internal-load-balancer`,
+      allowAllOutbound: true,
     });
-    addStandardTags(internalZone, taggingProps);
+    addStandardTags(internalALBSecurityGroup, taggingProps);
 
-    new cdk.CfnOutput(this, `${prefix}-internal-zone-id`, {
-      value: internalZone.hostedZoneId,
-      description: "The ID for the internal zone",
-      exportName: `${prefix}-internal-zone-id`,
-    }); */
+    internalALBSecurityGroup.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+
+    new cdk.CfnOutput(this, `${props.environment}-internal-load-balancer-sg-id`, {
+      value: internalALBSecurityGroup.securityGroupId,
+      description: "The id for the load balancer security group",
+      exportName: `${prefix}-internal-load-balancer-sg-id`,
+    });
+
+    internalALBSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.allTraffic(), "Allow all traffic");
+
+    const internalALB = new elbv2.ApplicationLoadBalancer(this, `${prefix}-internal-application-load-balancer`, {
+      vpc: vpc,
+      internetFacing: false,
+      loadBalancerName: `${prefix}-internal`,
+      deletionProtection: false,
+      vpcSubnets: { subnets: vpc.privateSubnets, availabilityZones: this.availabilityZones },
+      ipAddressType: elbv2.IpAddressType.IPV4,
+      securityGroup: internalALBSecurityGroup,
+      idleTimeout: cdk.Duration.seconds(30),
+    });
+    addStandardTags(internalALB, taggingProps);
+
+    new cdk.CfnOutput(this, `${prefix}-internal-load-balancer-dns`, {
+      value: internalALB.loadBalancerDnsName,
+      description: "The DNS for the internal load balancer",
+      exportName: `${prefix}-internal-load-balancer-dns`,
+    });
+
+    internalALB.addRedirect({
+      sourceProtocol: elbv2.ApplicationProtocol.HTTP,
+      sourcePort: 80,
+      targetProtocol: elbv2.ApplicationProtocol.HTTPS,
+      targetPort: 443,
+    });
+
+    const internalALBHTTPSListener = internalALB.addListener(`${prefix}-https-listener`, {
+      port: 443,
+      protocol: elbv2.ApplicationProtocol.HTTPS,
+      certificates: [certificate],
+      open: true,
+    });
+    addStandardTags(internalALBHTTPSListener, taggingProps);
+
+    new cdk.CfnOutput(this, `${prefix}-internal-https-listener-arn`, {
+      value: internalALBHTTPSListener.listenerArn,
+      description: "The ARN for the internal HTTPS Listener",
+      exportName: `${prefix}-internal-https-listener-arn`,
+    });
+
+    internalALBHTTPSListener.connections.allowFrom(externalALB, ec2.Port.tcp(80), `Allow connections from ${prefix} load balancer on port 80`);
+    internalALBHTTPSListener.connections.allowFrom(externalALB, ec2.Port.tcp(443), `Allow connections from ${prefix} load balancer on port 443`);
+
+    internalALBHTTPSListener.addAction(`${prefix}-default-action`, {
+      action: elbv2.ListenerAction.fixedResponse(200, { messageBody: JSON.stringify({ response: 200, message: prefix }) }),
+    });
+
+    internalALBHTTPSListener.addAction("Fixed", {
+      priority: 30,
+      conditions: [elbv2.ListenerCondition.pathPatterns(["/healthcheck"])],
+      action: elbv2.ListenerAction.fixedResponse(200, { messageBody: JSON.stringify({ response: 200, message: "healthy" }) }),
+    });
   }
 }
 
-/* export interface Route53StackProps extends cdk.StackProps {
-  readonly environment: string;
-  readonly project: string;
-  readonly service: string;
-  readonly hostedZoneName: string;
-  readonly recordName: string;
-  readonly value: string;
-}
-export class Route53CreateCNAMEStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: Route53StackProps) {
-    super(scope, id, props);
 
-    const prefix = `${props.environment}-${props.project}-${props.service}`;
-
-    const hostedZone = route53.HostedZone.fromLookup(this, `${prefix}-importing-hosted-zone`, {
-      domainName: props.hostedZoneName, //e.g. example.com
-    });
-
-    new route53.CnameRecord(this, `${prefix}-route53-cname-record`, {
-      domainName: props.value,
-      zone: hostedZone,
-      comment: `Create the CNAME record for ${prefix} in ${props.hostedZoneName}`,
-      recordName: props.recordName,
-      ttl: cdk.Duration.minutes(30),
-    });
-  }
-} */

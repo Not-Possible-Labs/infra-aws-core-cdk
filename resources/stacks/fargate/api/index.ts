@@ -34,9 +34,8 @@ export interface FargateStackStackProps extends cdk.StackProps {
   readonly memoryLimitMiB: number;
   readonly cpu: number;
   readonly targetGroupPriority?: number;
-  readonly loadBalancerDns?: string;
   readonly subdomain: string;
-  readonly whitelist?: Array<{ address: string; description: string }>;
+
 }
 export class FargateStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FargateStackStackProps) {
@@ -178,12 +177,12 @@ export class FargateStack extends cdk.Stack {
       })
     );
 
-    const logGroup = new logs.LogGroup(this, `${prefix}-container-log-group`, {
-      logGroupName: `ecs/container/${props.project}/${props.environment}/${props.service}`,
-      retention: logs.RetentionDays.ONE_WEEK,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-    addStandardTags(logGroup, taggingProps);
+    /*     const logGroup = new logs.LogGroup(this, `${prefix}-container-log-group`, {
+          logGroupName: `ecs/container/${props.project}/${props.environment}/${props.service}`,
+          retention: logs.RetentionDays.ONE_WEEK,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
+        addStandardTags(logGroup, taggingProps); */
 
     /************************************ FARGATE *********************************/
 
@@ -218,8 +217,9 @@ export class FargateStack extends cdk.Stack {
       essential: true,
       logging: new ecs.AwsLogDriver({
         streamPrefix: "ecs",
-        logGroup: logGroup,
+        //logGroup: logGroup,
         multilinePattern: "^(INFO|DEBUG|WARN|ERROR|CRITICAL)",
+        logRetention: logs.RetentionDays.ONE_DAY,
       }),
       /*  healthCheck: {
         command: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"],
@@ -366,7 +366,7 @@ export class FargateStack extends cdk.Stack {
 
     /***************************** TARGET GROUP *****************************/
 
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, `${prefix}-target-group`, {
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, `${prefix}-tg`, {
       port: 80,
       vpc: vpc,
       protocol: elbv2.ApplicationProtocol.HTTP,
@@ -384,11 +384,11 @@ export class FargateStack extends cdk.Stack {
     });
     //Import HTTPS Listener from ./shared
     const HTTPSListener = elbv2.ApplicationListener.fromApplicationListenerAttributes(this, `${prefix}-https-listener`, {
-      listenerArn: cdk.Fn.importValue(`${props.environment}-${props.project}-https-listener-arn`),
+      listenerArn: cdk.Fn.importValue(`${props.environment}-${props.project}-internal-https-listener-arn`),
       securityGroup: ec2.SecurityGroup.fromSecurityGroupId(
         this,
         `imported-${prefix}-load-balancer-sg-id`,
-        cdk.Fn.importValue(`${props.environment}-${props.project}-load-balancer-sg-id`),
+        cdk.Fn.importValue(`${props.environment}-${props.project}-internal-load-balancer-sg-id`),
         {
           allowAllOutbound: true,
           mutable: true,
@@ -399,7 +399,9 @@ export class FargateStack extends cdk.Stack {
     //Setup Listener Action
     HTTPSListener.addAction(`${prefix}-https-listener-action`, {
       priority: props.targetGroupPriority,
-      conditions: [elbv2.ListenerCondition.hostHeaders([`${props.subdomain}.${props.environment}.${props.domain}`])],
+      conditions: [
+        elbv2.ListenerCondition.hostHeaders([`${props.subdomain}.${props.environment}.${props.domain}`]), // elbv2.ListenerCondition.sourceIps([vpc.vpcCidrBlock, "10.0.0.0/24"])
+      ],
       action: elbv2.ListenerAction.forward([targetGroup]),
     });
 
@@ -412,7 +414,7 @@ export class FargateStack extends cdk.Stack {
     });
 
     const cnameRecord = new route53.CnameRecord(this, `${prefix}-route53-cname-record`, {
-      domainName: cdk.Fn.importValue(`${props.environment}-${props.project}-load-balancer-dns`),
+      domainName: cdk.Fn.importValue(`${props.environment}-${props.project}-internal-load-balancer-dns`),
       zone: hostedZone,
       comment: `Create the CNAME record for ${prefix} in ${props.project}.internal`,
       recordName: props.environment === "prod" ? `${props.subdomain}.${props.domain}` : `${props.subdomain}.${props.environment}.${props.domain}`,

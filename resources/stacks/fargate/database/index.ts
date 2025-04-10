@@ -148,7 +148,7 @@ export class PostgresStack extends cdk.Stack {
     cdk.Tags.of(efsSecurityGroup).add("Name", `${prefix}-efs`);
 
     // Create EFS filesystem
-    const fileSystem = new efs.FileSystem(this, `${prefix}-efs`, {
+    const fileSystem = new efs.FileSystem(this, `${prefix}-database-efs`, {
       vpc: vpc,
       vpcSubnets: {
         subnets: vpc.privateSubnets,
@@ -156,12 +156,13 @@ export class PostgresStack extends cdk.Stack {
       },
       encrypted: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-      fileSystemName: `${prefix}`,
+      fileSystemName: `${prefix}-database`,
       securityGroup: efsSecurityGroup,
       enableAutomaticBackups: true,
       performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
       throughputMode: efs.ThroughputMode.BURSTING,
     });
+    fileSystem.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
     addStandardTags(fileSystem, taggingProps);
 
     // Tag EFS filesystem
@@ -279,6 +280,11 @@ export class PostgresStack extends cdk.Stack {
         PGDATA: "/var/lib/postgresql/data/pgdata",
         POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256",
         POSTGRES_HOST_AUTH_METHOD: "scram-sha-256",
+        POSTGRES_STOP_MODE: "smart",
+        POSTGRES_SHUTDOWN_TIMEOUT: "300",
+      },
+      dockerLabels: {
+        "STOPSIGNAL": "SIGTERM"
       },
       linuxParameters: new ecs.LinuxParameters(this, `${prefix}-linux-parameters`, {
         initProcessEnabled: true,
@@ -343,7 +349,6 @@ export class PostgresStack extends cdk.Stack {
       serviceName: props.service,
     });
     addStandardTags(service, taggingProps);
-
     // Ensure service depends on EFS
     service.node.addDependency(fileSystem);
 

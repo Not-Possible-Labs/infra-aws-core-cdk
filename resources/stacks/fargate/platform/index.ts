@@ -41,7 +41,6 @@ export interface FargateStackStackProps extends cdk.StackProps {
   readonly cpu: number;
   readonly targetGroupPriority?: number;
   readonly subdomain: string;
-  readonly whitelist?: Array<{ address: string; description: string }>;
 }
 export class FargateStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FargateStackStackProps) {
@@ -200,12 +199,12 @@ export class FargateStack extends cdk.Stack {
       })
     );
 
-    const logGroup = new logs.LogGroup(this, `${prefix}-container-log-group`, {
-      logGroupName: `ecs/container/${props.project}/${props.environment}/${props.service}`,
-      retention: logs.RetentionDays.ONE_WEEK,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-    addStandardTags(logGroup, taggingProps);
+    /*  const logGroup = new logs.LogGroup(this, `${prefix}-container-log-group`, {
+       logGroupName: `ecs/container/${props.project}/${props.environment}/${props.service}`,
+       retention: logs.RetentionDays.ONE_WEEK,
+       removalPolicy: cdk.RemovalPolicy.DESTROY,
+     });
+     addStandardTags(logGroup, taggingProps); */
 
     /************************************ FARGATE *********************************/
 
@@ -240,8 +239,8 @@ export class FargateStack extends cdk.Stack {
       essential: true,
       logging: new ecs.AwsLogDriver({
         streamPrefix: "ecs",
-        logGroup: logGroup,
         multilinePattern: "^(INFO|DEBUG|WARN|ERROR|CRITICAL)",
+        logRetention: logs.RetentionDays.ONE_DAY,
       }),
       healthCheck: {
         command: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"],
@@ -274,7 +273,7 @@ export class FargateStack extends cdk.Stack {
      */
     const capacityProviderStrategies = [
       {
-        capacityProvider: "FARGATE_SPOT",
+        capacityProvider: "FARGATE",
         weight: props.desiredCount === 0 ? 1 : props.desiredCount,
       },
     ];
