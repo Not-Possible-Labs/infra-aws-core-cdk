@@ -41,7 +41,7 @@ export const authApi: Service = {
     desiredCount: 1,
   },
   healthCheck: "/healthcheck",
-  secrets: ["NODE_ENV", "DATABASE_URL", "APIKEY"],
+  secrets: ["NODE_ENV", "DATABASE_URL", "DIRECT_URL", "APIKEY", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL"],
 };
 
 export const adminUi: Service = {
@@ -207,7 +207,7 @@ export const matchmakingApi: Service = {
   secrets: ["NODE_ENV", "DATABASE_URL", "APIKEY"],
 };
 
-export const database: Service = {
+/* export const database: Service = {
   name: "postgres",
   type: "database",
   description: "Postgres database",
@@ -219,7 +219,7 @@ export const database: Service = {
     cpu: 512,
     desiredCount: 1,
   },
-};
+}; */
 
 export const conduktor: Service = {
   name: "conduktor",

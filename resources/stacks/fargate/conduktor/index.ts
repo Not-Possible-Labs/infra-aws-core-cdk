@@ -464,7 +464,7 @@ export class ConduktorStack extends cdk.Stack {
     const recordName = props.environment === "prod" ? `${props.subdomain}.${props.domain}` : `${props.subdomain}.${props.environment}.${props.domain}`;
 
     // Create separate security group for ALB
-    const albSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-alb-sg`, {
+    /* const albSecurityGroup = new ec2.SecurityGroup(this, `${prefix}-alb-sg`, {
       vpc: vpc,
       description: `Security group for Application Load Balancer in ${props.environment}`,
       allowAllOutbound: true,
@@ -475,13 +475,13 @@ export class ConduktorStack extends cdk.Stack {
     // Allow ALB to communicate with ECS service
     fargateSecurityGroup.addIngressRule(albSecurityGroup, ec2.Port.allTcp(), "Allow traffic from ALB");
     albSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.allTcp(), `Allow TCP Traffic for ${vpc.vpcId}`);
-    albSecurityGroup.addIngressRule(ec2.Peer.ipv4('10.0.0.0/24'), ec2.Port.allTcp(), `Allow TCP Traffic for management vpc`);
+    albSecurityGroup.addIngressRule(ec2.Peer.ipv4('10.0.0.0/24'), ec2.Port.allTcp(), `Allow TCP Traffic for management vpc`); */
 
 
     /**
      * CREATE ALB
      */
-    const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${prefix}-application-load-balancer`, {
+    /* const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${prefix}-application-load-balancer`, {
       vpc: vpc,
       internetFacing: false,
       loadBalancerName: `${prefix}`,
@@ -490,74 +490,74 @@ export class ConduktorStack extends cdk.Stack {
       ipAddressType: elbv2.IpAddressType.IPV4,
       idleTimeout: cdk.Duration.seconds(30),
     });
-    addStandardTags(loadBalancer, taggingProps);
+    addStandardTags(loadBalancer, taggingProps); */
 
     // HTTP Listener (port 80) with redirect to HTTPS
-    const httpListener = loadBalancer.addListener(`${prefix}-http-listener`, {
-      port: 80,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      defaultAction: elbv2.ListenerAction.redirect({
-        protocol: "HTTPS",
-        port: "443",
-        permanent: true,
-      }),
-    });
+    /*   const httpListener = loadBalancer.addListener(`${prefix}-http-listener`, {
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        defaultAction: elbv2.ListenerAction.redirect({
+          protocol: "HTTPS",
+          port: "443",
+          permanent: true,
+        }),
+      }); */
 
     // Target group for Conduktor service
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, `${prefix}-target-group`, {
-      port: 8080,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      vpc: vpc,
-      healthCheck: {
-        path: props.healthCheck,
-        port: "8080",
-        protocol: elbv2.Protocol.HTTP,
-        interval: cdk.Duration.seconds(15),
-        timeout: cdk.Duration.seconds(10),
-        healthyHttpCodes: "200",
-        unhealthyThresholdCount: 5,
-        healthyThresholdCount: 2,
-      },
+    /*  const targetGroup = new elbv2.ApplicationTargetGroup(this, `${prefix}-target-group`, {
+       port: 8080,
+       protocol: elbv2.ApplicationProtocol.HTTP,
+       vpc: vpc,
+       healthCheck: {
+         path: props.healthCheck,
+         port: "8080",
+         protocol: elbv2.Protocol.HTTP,
+         interval: cdk.Duration.seconds(15),
+         timeout: cdk.Duration.seconds(10),
+         healthyHttpCodes: "200",
+         unhealthyThresholdCount: 5,
+         healthyThresholdCount: 2,
+       },
+ 
+       targets: [conduktorService.loadBalancerTarget({ containerPort: 8080, containerName: conduktorConsoleContainer.containerName })],
+       targetGroupName: `${prefix}`,
+     });
+     addStandardTags(targetGroup, taggingProps); */
 
-      targets: [conduktorService.loadBalancerTarget({ containerPort: 8080, containerName: conduktorConsoleContainer.containerName })],
-      targetGroupName: `${prefix}`,
-    });
-    addStandardTags(targetGroup, taggingProps);
-
-    const importedCertificate = acm.Certificate.fromCertificateArn(
-      this,
-      `${props.environment}-${props.project}-imported-primary-certificate`,
-      cdk.Fn.importValue(`${props.environment}-${props.project}-certificate-arn`),
-    );
-    // HTTPS Listener (port 443) forwarding to Conduktor on port 8080
-    const httpsListener = loadBalancer.addListener(`${prefix}-https-listener`, {
-      port: 443,
-      protocol: elbv2.ApplicationProtocol.HTTPS,
-      certificates: [importedCertificate],
-      defaultAction: elbv2.ListenerAction.forward([targetGroup]),
-    });
-
-    //Setup Listener Action
-    httpListener.addAction(`${prefix}-http-listener-action`, {
-      priority: props.targetGroupPriority,
-      conditions: [elbv2.ListenerCondition.hostHeaders([recordName])],
-      action: elbv2.ListenerAction.forward([targetGroup]),
-    });
-
-    httpListener.connections.allowFrom(loadBalancer, ec2.Port.tcp(8080), `Allow connections from ${prefix} load balancer on port 8080`);
-
-    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, `${prefix}-imported-hosted-zone`, {
-      hostedZoneId: cdk.Fn.importValue(`${props.environment}-${props.project}-hosted-zone-id`),
-      zoneName: `${props.environment}.${props.domain}`,
-    });
-    const cnameRecord = new route53.CnameRecord(this, `${prefix}-route53-cname-record`, {
-      domainName: loadBalancer.loadBalancerDnsName,
-      zone: hostedZone,
-      comment: `Create the CNAME record for ${prefix} in ${props.project}`,
-      recordName: recordName,
-      ttl: cdk.Duration.minutes(30),
-    });
-    addStandardTags(cnameRecord, taggingProps);
+    /*  const importedCertificate = acm.Certificate.fromCertificateArn(
+       this,
+       `${props.environment}-${props.project}-imported-primary-certificate`,
+       cdk.Fn.importValue(`${props.environment}-${props.project}-certificate-arn`),
+     );
+     // HTTPS Listener (port 443) forwarding to Conduktor on port 8080
+     const httpsListener = loadBalancer.addListener(`${prefix}-https-listener`, {
+       port: 443,
+       protocol: elbv2.ApplicationProtocol.HTTPS,
+       certificates: [importedCertificate],
+       defaultAction: elbv2.ListenerAction.forward([targetGroup]),
+     });
+ 
+     //Setup Listener Action
+     httpListener.addAction(`${prefix}-http-listener-action`, {
+       priority: props.targetGroupPriority,
+       conditions: [elbv2.ListenerCondition.hostHeaders([recordName])],
+       action: elbv2.ListenerAction.forward([targetGroup]),
+     });
+ 
+     httpListener.connections.allowFrom(loadBalancer, ec2.Port.tcp(8080), `Allow connections from ${prefix} load balancer on port 8080`);
+ 
+     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, `${prefix}-imported-hosted-zone`, {
+       hostedZoneId: cdk.Fn.importValue(`${props.environment}-${props.project}-hosted-zone-id`),
+       zoneName: `${props.environment}.${props.domain}`,
+     });
+     const cnameRecord = new route53.CnameRecord(this, `${prefix}-route53-cname-record`, {
+       domainName: loadBalancer.loadBalancerDnsName,
+       zone: hostedZone,
+       comment: `Create the CNAME record for ${prefix} in ${props.project}`,
+       recordName: recordName,
+       ttl: cdk.Duration.minutes(30),
+     });
+     addStandardTags(cnameRecord, taggingProps); */
 
     // *********************************************
     // EventBridge Rules for ecs-service Service

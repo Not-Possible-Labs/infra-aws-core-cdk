@@ -48,7 +48,7 @@ export const projects: Project[] = [
       //service.disputeResolutionApi,
       //service.bettingApi,
       service.adminUi,
-      service.database,
+      //service.database,
       service.conduktor,
     ],
   },
